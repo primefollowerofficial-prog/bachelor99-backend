@@ -6,7 +6,7 @@ const cors = require('cors');
 
 const ordersRouter = require('./routes/orders');
 const trackRouter = require('./routes/track');
-const adminRouter = require('./routes/admin');
+const adminRouter = require('./analtics/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
