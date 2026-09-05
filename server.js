@@ -6,7 +6,8 @@ const cors = require('cors');
 
 const ordersRouter = require('./routes/orders');
 const trackRouter = require('./routes/track');
-const adminRouter = require('./analtics/admin');
+const adminRouter = require('./routes/admin');
+const contactRouter = require('./routes/contact');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -44,6 +45,7 @@ app.get('/health', (req, res) => {
 app.use('/api/orders', ordersRouter);
 app.use('/api/track', trackRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/contact', contactRouter);
 
 // 404 handler
 app.use((req, res) => {
