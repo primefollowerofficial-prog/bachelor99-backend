@@ -3,8 +3,7 @@ const express = require('express');
 const { v4: uuidv4 } = require('uuid');
 const { db, admin } = require('../config/firebase');
 const cashfree = require('../config/cashfree');
-const { toISTDateString } = require('/utils/dateRange');
-
+const { toISTDateString } = require('../utils/daterange');
 const router = express.Router();
 
 const PRICE_PER_UNIT = Number(process.env.PRICE_PER_UNIT || 99);

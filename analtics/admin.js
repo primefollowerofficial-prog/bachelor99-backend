@@ -1,7 +1,7 @@
 'use strict';
 const express = require('express');
 const { db } = require('../config/firebase');
-const { resolveRange } = require('/utils/dateRange');
+const { resolveRange } = require('../utils/daterange');
 
 const router = express.Router();
 
