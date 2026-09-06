@@ -8,6 +8,8 @@ const ordersRouter = require('./routes/orders');
 const trackRouter = require('./routes/track');
 const adminRouter = require('./routes/admin');
 const contactRouter = require('./routes/contact');
+const messagesRouter = require('./routes/messages');
+const { publicRouter: couponsPublicRouter, adminRouter: couponsAdminRouter } = require('./routes/coupons');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -45,6 +47,9 @@ app.get('/health', (req, res) => {
 app.use('/api/orders', ordersRouter);
 app.use('/api/track', trackRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/admin/messages', messagesRouter);
+app.use('/api/admin/coupons', couponsAdminRouter);
+app.use('/api/coupons', couponsPublicRouter);
 app.use('/api/contact', contactRouter);
 
 // 404 handler

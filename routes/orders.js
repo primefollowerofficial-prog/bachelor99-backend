@@ -4,6 +4,7 @@ const { v4: uuidv4 } = require('uuid');
 const { db, admin } = require('../config/firebase');
 const cashfree = require('../config/cashfree');
 const { toISTDateString } = require('../utils/daterange');
+const { validateCouponForAmount, incrementCouponUsage } = require('./coupons');
 const router = express.Router();
 
 const PRICE_PER_UNIT = Number(process.env.PRICE_PER_UNIT || 99);
@@ -24,7 +25,7 @@ function isValidPhone(phone) {
  */
 router.post('/create', async (req, res) => {
   try {
-    const { firstName, lastName, email, phone, quantity, marketingOptIn } = req.body || {};
+    const { firstName, lastName, email, phone, quantity, marketingOptIn, couponCode } = req.body || {};
 
     const fName = (firstName || '').trim();
     const lName = (lastName || '').trim();
@@ -37,7 +38,19 @@ router.post('/create', async (req, res) => {
 
     const cleanPhone = phone.replace(/\D/g, '');
     const customerName = `${fName} ${lName}`.trim();
-    const amount = PRICE_PER_UNIT * qty; // server is the source of truth for price
+    const originalAmount = PRICE_PER_UNIT * qty; // server is the source of truth for price
+
+    // Coupon is optional. If provided, it's re-validated here — never
+    // trust a discount amount coming from the frontend.
+    let amount = originalAmount;
+    let appliedCoupon = null;
+    if (couponCode && String(couponCode).trim()) {
+      const result = await validateCouponForAmount(couponCode, originalAmount);
+      if (!result.valid) return res.status(400).json({ error: result.error });
+      amount = result.finalAmount;
+      appliedCoupon = { code: result.code, discountAmount: result.discountAmount };
+    }
+
     const orderId = `BC99-${Date.now()}-${uuidv4().slice(0, 8)}`;
     const nowDate = new Date();
 
@@ -50,7 +63,10 @@ router.post('/create', async (req, res) => {
       email: email.trim().toLowerCase(),
       phone: cleanPhone,
       quantity: qty,
+      originalAmount,
       amount,
+      couponCode: appliedCoupon ? appliedCoupon.code : null,
+      discountAmount: appliedCoupon ? appliedCoupon.discountAmount : 0,
       marketingOptIn: !!marketingOptIn,
       status: 'pending',
       cfOrderId: null,
@@ -139,6 +155,8 @@ router.post('/webhook', async (req, res) => {
         salesCount: admin.firestore.FieldValue.increment(order.quantity || 1),
         revenue: admin.firestore.FieldValue.increment(order.amount || 0)
       }, { merge: true });
+
+      if (order.couponCode) await incrementCouponUsage(order.couponCode);
     } else if (newStatus === 'failed' && order.status !== 'failed' && order.status !== 'paid') {
       await orderRef.update({
         status: 'failed',
@@ -182,6 +200,7 @@ router.get('/status/:orderId', async (req, res) => {
             salesCount: admin.firestore.FieldValue.increment(order.quantity || 1),
             revenue: admin.firestore.FieldValue.increment(order.amount || 0)
           }, { merge: true });
+          if (order.couponCode) await incrementCouponUsage(order.couponCode);
           order.status = 'paid';
         } else if (['EXPIRED', 'TERMINATED'].includes(cfOrder.order_status) && order.status === 'pending') {
           await orderRef.update({ status: 'failed', updatedAt: admin.firestore.FieldValue.serverTimestamp() });
