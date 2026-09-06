@@ -16,13 +16,18 @@ const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
-  .map(s => s.trim())
+  .map(s => s.trim().replace(/\/+$/, '')) // trim whitespace + any trailing slash
   .filter(Boolean);
+
+console.log('[cors-debug] ALLOWED_ORIGINS parsed as:', JSON.stringify(allowedOrigins));
 
 app.use(cors({
   origin: function (origin, callback) {
+    const normalizedOrigin = origin ? origin.replace(/\/+$/, '') : origin;
+    console.log('[cors-debug] incoming origin:', JSON.stringify(origin), '-> allowed?', !origin || allowedOrigins.length === 0 || allowedOrigins.includes(normalizedOrigin));
+
     // Allow non-browser requests (curl, server-to-server) with no origin header
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(normalizedOrigin)) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
