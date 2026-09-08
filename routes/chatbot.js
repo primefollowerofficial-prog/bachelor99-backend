@@ -6,13 +6,18 @@
    the Express route itself. Mount it in server.js with:
 
      const chatbotRouter = require('./routes/chatbot');
-     app.use('/api/chatbot', chatbotRouter);
+     app.use('/api/chat', chatbotRouter);
 
-   Frontend calls: POST {API_BASE_URL}/api/chatbot/message
-   Body: { message: string, history?: [{role:'user'|'assistant', content:string}] }
-   Response: { reply: string }
+   IMPORTANT: this matches the chat widget ALREADY LIVE in script.js
+   (initializeChat / sendToBackend), which calls:
+     POST {API_BASE_URL}/api/chat
+     Body: { messages: [{ role: 'user'|'assistant', content: string }, ...] }
+     Response: { reply: string }
+   The full running conversation (not just the latest message) is sent
+   every time, so this route treats req.body.messages as the source of
+   truth and does not maintain any server-side session state.
 
-   Requires env var OPENROUTER_API_KEY (you've already added this on Railway).
+   Requires env var OPENROUTER_API_KEY (already added on Railway).
    Optional env vars:
      OPENROUTER_MODEL   — override the default model
      SITE_URL           — your live site URL, sent to OpenRouter for their
@@ -53,6 +58,7 @@ You are "${BOT_NAME}", the friendly on-site assistant for Bachelor99 — a small
 - Format & delivery: instant digital PDF download. Opens cleanly on phone, tablet, or laptop. No physical product, nothing is shipped, and there's no waiting — access is granted right after payment is confirmed.
 - Cooking time: most recipes are ready in about 30 minutes or less.
 - Positioning: simple recipes (no complicated techniques), budget-friendly ingredients, fast meals, familiar home-style Indian flavours.
+- Cost per meal: most recipes are built to cost around ₹99 or less per meal using common Indian pantry ingredients. A handful of special recipes may cost slightly more, and the book flags those clearly — don't claim every single recipe costs ₹99 or under.
 - Rated 4.7/5 by customers (shown via on-site reviews).
 - Framed as a "risk-free purchase — love the recipes or keep the guide," but there is NOT a formal published refund/money-back policy. If someone asks for a refund or about a formal guarantee/refund policy, don't promise specific refund terms — tell them to use the "Contact Us" button so a real person can help.
 
@@ -107,19 +113,22 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref();
 
-function sanitizeHistory(history) {
-  if (!Array.isArray(history)) return [];
-  return history
-    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string')
+function sanitizeMessages(rawMessages) {
+  if (!Array.isArray(rawMessages)) return [];
+  return rawMessages
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content.trim())
     .slice(-MAX_HISTORY_MESSAGES)
-    .map(m => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_LENGTH) }));
+    .map(m => ({ role: m.role, content: m.content.trim().slice(0, MAX_MESSAGE_LENGTH) }));
 }
 
 /**
- * POST /api/chatbot/message
- * Body: { message: string, history?: Array<{role, content}> }
+ * POST /api/chat
+ * Body: { messages: Array<{ role: 'user'|'assistant', content: string }> }
+ * This is the exact contract the live chat widget in script.js already
+ * calls — the frontend keeps the running conversation client-side and
+ * resends it in full on every message.
  */
-router.post('/message', async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     if (!OPENROUTER_API_KEY) {
       console.error('[chatbot] OPENROUTER_API_KEY is missing.');
@@ -131,19 +140,18 @@ router.post('/message', async (req, res) => {
       return res.status(429).json({ error: 'You are sending messages too fast. Please slow down a little.' });
     }
 
-    const rawMessage = (req.body && req.body.message) || '';
-    const message = String(rawMessage).trim();
-    if (!message) return res.status(400).json({ error: 'Please type a message.' });
-    if (message.length > MAX_MESSAGE_LENGTH) {
-      return res.status(400).json({ error: 'That message is too long.' });
+    const conversation = sanitizeMessages(req.body && req.body.messages);
+    if (conversation.length === 0) {
+      return res.status(400).json({ error: 'Please type a message.' });
     }
-
-    const history = sanitizeHistory(req.body && req.body.history);
+    // The widget always sends the latest user turn last, but guard anyway.
+    if (conversation[conversation.length - 1].role !== 'user') {
+      return res.status(400).json({ error: 'Invalid conversation — last message must be from the user.' });
+    }
 
     const messages = [
       { role: 'system', content: SYSTEM_PROMPT },
-      ...history,
-      { role: 'user', content: message }
+      ...conversation
     ];
 
     const response = await fetch(OPENROUTER_URL, {
