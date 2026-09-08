@@ -5,6 +5,7 @@ const { db, admin } = require('../config/firebase');
 const cashfree = require('../config/cashfree');
 const { toISTDateString } = require('../utils/daterange');
 const { validateCouponForAmount, incrementCouponUsage } = require('./coupons');
+const { sendOrderConfirmationEmail } = require('../config/brevo');
 const router = express.Router();
 
 const PRICE_PER_UNIT = Number(process.env.PRICE_PER_UNIT || 99);
@@ -36,6 +37,14 @@ router.post('/create', async (req, res) => {
     if (!isValidEmail(email || '')) return res.status(400).json({ error: 'A valid email is required.' });
     if (!isValidPhone((phone || '').replace(/\D/g, ''))) return res.status(400).json({ error: 'A valid 10-digit phone number is required.' });
 
+    // Email must be OTP-verified via /api/otp/send + /api/otp/verify before
+    // an order can be placed. Never trust a frontend-only "verified" flag.
+    const cleanEmailForCheck = (email || '').trim().toLowerCase();
+    const otpSnap = await db.collection('emailOtps').doc(cleanEmailForCheck).get();
+    if (!otpSnap.exists || !otpSnap.data().verified) {
+      return res.status(400).json({ error: 'Please verify your email before placing the order.' });
+    }
+
     const cleanPhone = phone.replace(/\D/g, '');
     const customerName = `${fName} ${lName}`.trim();
     const originalAmount = PRICE_PER_UNIT * qty; // server is the source of truth for price
@@ -60,7 +69,7 @@ router.post('/create', async (req, res) => {
       firstName: fName,
       lastName: lName,
       customerName,
-      email: email.trim().toLowerCase(),
+      email: cleanEmailForCheck,
       phone: cleanPhone,
       quantity: qty,
       originalAmount,
@@ -157,6 +166,14 @@ router.post('/webhook', async (req, res) => {
       }, { merge: true });
 
       if (order.couponCode) await incrementCouponUsage(order.couponCode);
+
+      // Send the order-confirmation email only now that payment is
+      // actually confirmed. Never let an email failure break the webhook.
+      try {
+        await sendOrderConfirmationEmail(order.email, order.customerName);
+      } catch (mailErr) {
+        console.error('[orders/webhook] confirmation email failed:', mailErr.message);
+      }
     } else if (newStatus === 'failed' && order.status !== 'failed' && order.status !== 'paid') {
       await orderRef.update({
         status: 'failed',
@@ -201,6 +218,15 @@ router.get('/status/:orderId', async (req, res) => {
             revenue: admin.firestore.FieldValue.increment(order.amount || 0)
           }, { merge: true });
           if (order.couponCode) await incrementCouponUsage(order.couponCode);
+
+          // Same confirmation email, in case the webhook never arrives
+          // and this poll is what first observes the "paid" transition.
+          try {
+            await sendOrderConfirmationEmail(order.email, order.customerName);
+          } catch (mailErr) {
+            console.error('[orders/status] confirmation email failed:', mailErr.message);
+          }
+
           order.status = 'paid';
         } else if (['EXPIRED', 'TERMINATED'].includes(cfOrder.order_status) && order.status === 'pending') {
           await orderRef.update({ status: 'failed', updatedAt: admin.firestore.FieldValue.serverTimestamp() });

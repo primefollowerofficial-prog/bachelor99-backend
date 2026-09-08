@@ -9,6 +9,7 @@ const trackRouter = require('./routes/track');
 const adminRouter = require('./routes/admin');
 const contactRouter = require('./routes/contact');
 const messagesRouter = require('./routes/messages');
+const otpRouter = require('./routes/otp');
 const { publicRouter: couponsPublicRouter, adminRouter: couponsAdminRouter } = require('./routes/coupons');
 
 const app = express();
@@ -16,18 +17,13 @@ const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
   .split(',')
-  .map(s => s.trim().replace(/\/+$/, '')) // trim whitespace + any trailing slash
+  .map(s => s.trim())
   .filter(Boolean);
-
-console.log('[cors-debug] ALLOWED_ORIGINS parsed as:', JSON.stringify(allowedOrigins));
 
 app.use(cors({
   origin: function (origin, callback) {
-    const normalizedOrigin = origin ? origin.replace(/\/+$/, '') : origin;
-    console.log('[cors-debug] incoming origin:', JSON.stringify(origin), '-> allowed?', !origin || allowedOrigins.length === 0 || allowedOrigins.includes(normalizedOrigin));
-
     // Allow non-browser requests (curl, server-to-server) with no origin header
-    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(normalizedOrigin)) {
+    if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
     callback(new Error('Not allowed by CORS'));
@@ -56,6 +52,7 @@ app.use('/api/admin/messages', messagesRouter);
 app.use('/api/admin/coupons', couponsAdminRouter);
 app.use('/api/coupons', couponsPublicRouter);
 app.use('/api/contact', contactRouter);
+app.use('/api/otp', otpRouter);
 
 // 404 handler
 app.use((req, res) => {
