@@ -10,7 +10,6 @@ const adminRouter = require('./routes/admin');
 const contactRouter = require('./routes/contact');
 const messagesRouter = require('./routes/messages');
 const otpRouter = require('./routes/otp');
-const chatbotRouter = require('./routes/chatbot');
 const { publicRouter: couponsPublicRouter, adminRouter: couponsAdminRouter } = require('./routes/coupons');
 
 const app = express();
@@ -54,7 +53,6 @@ app.use('/api/admin/coupons', couponsAdminRouter);
 app.use('/api/coupons', couponsPublicRouter);
 app.use('/api/contact', contactRouter);
 app.use('/api/otp', otpRouter);
-app.use('/api/chat', chatbotRouter);
 
 // 404 handler
 app.use((req, res) => {
